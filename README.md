@@ -1,4 +1,4 @@
-````markdown
+
 # Awareness Fullscreen Countdown
 
 This small Windows tool shows a fullscreen awareness image on all connected monitors, overlays a countdown, and blocks certain key combinations while it is running.  
