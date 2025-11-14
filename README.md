@@ -9,6 +9,10 @@ This is either a really good idea to spread awareness... or a really REALLY bad 
 PLEASE (for the love of god) get approval in writing from everybody and their parents before deploying.
 It WILL lock up the users' computers for the amount of time declared in the source code.
 
+![pic1](https://github.com/user-attachments/assets/9696512e-5478-4072-a459-f5ce6c1c8860)
+
+![pic2](https://github.com/user-attachments/assets/812714d8-e5ce-4af7-96aa-c7449e2ce183)
+
 ---
 
 ## Features
