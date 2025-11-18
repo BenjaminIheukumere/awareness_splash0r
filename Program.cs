@@ -4,13 +4,17 @@ using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Windows.Forms.Integration;
+using System.Windows.Media;
+using WpfMediaElement = System.Windows.Controls.MediaElement;
+using WpfMediaState = System.Windows.Controls.MediaState;
 
 namespace AwarenessFullScreen
 {
     static class Program
     {
         // ---------------------------------------------------------------------------------------------
-        // AwarenessSplash0r v1.0 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
+        // AwarenessSplash0r v1.2 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
         // ---------------------------------------------------------------------------------------------
 
         // --------------------------------------------------------------------
@@ -18,14 +22,18 @@ namespace AwarenessFullScreen
         // --------------------------------------------------------------------
 
         // Countdown duration in seconds (e.g. 180 = 3 minutes)
-        public static int CountdownSeconds = 10;
+        public static int CountdownSeconds = 45;
 
         // Path to the primary background image
         public static string ImagePath = @"C:\awareness\pic1.jpg";
 
         // Path to the optional secondary background image
         // This image will be shown shortly before the timer ends (see value below)
-        public static string SecondaryImagePath = @"C:\awareness\pic1.jpg";
+        public static string SecondaryImagePath = @"C:\awareness\pic2.jpg";
+
+        // Path to an optional video file
+        // For best compatibility use WMV, e.g. C:\awareness\video1.wmv
+        public static string VideoPath = @"C:\awareness\video1.wmv";
 
         // Number of seconds before the end when the secondary image should be shown
         public static int SecondaryImageSwitchBeforeEndSeconds = 5;
@@ -37,7 +45,7 @@ namespace AwarenessFullScreen
         // 0–100, relative to fullscreen of each display
         public static int CountdownAreaWidthPercent = 100; // width
         public static int CountdownAreaHeightPercent = 10; // height
-        public static int CountdownAreaLeftPercent = 0;     // distance from middle. 0 = absolute middle
+        public static int CountdownAreaLeftPercent = 0;     // distance from left
         public static int CountdownAreaTopPercent = 85;     // distance from top
 
         // --------------------------------------------------------------------
@@ -61,13 +69,21 @@ namespace AwarenessFullScreen
                 return;
             }
 
-            // Main form on the first screen
-            CountdownForm mainForm = new CountdownForm(screens[0], ImagePath, CountdownSeconds);
+            // Main form on the first screen (with video audio)
+            CountdownForm mainForm = new CountdownForm(
+                screens[0],
+                ImagePath,
+                CountdownSeconds,
+                playVideoAudio: true);
 
-            // Additional forms on other screens
+            // Additional forms on other screens (video muted)
             for (int i = 1; i < screens.Length; i++)
             {
-                CountdownForm f = new CountdownForm(screens[i], ImagePath, CountdownSeconds);
+                CountdownForm f = new CountdownForm(
+                    screens[i],
+                    ImagePath,
+                    CountdownSeconds,
+                    playVideoAudio: false);
                 f.Show();
             }
 
@@ -85,10 +101,16 @@ namespace AwarenessFullScreen
 
         private bool secondaryImageSwitched = false;
 
+        // WPF video host + element
+        private ElementHost videoHost;
+        private WpfMediaElement mediaElement;
+        private readonly bool playVideoAudio;
+
         private static bool allowClose = false;
 
-        public CountdownForm(Screen screen, string imagePath, int countdownSeconds)
+        public CountdownForm(Screen screen, string imagePath, int countdownSeconds, bool playVideoAudio)
         {
+            this.playVideoAudio = playVideoAudio;
             remainingSeconds = countdownSeconds;
 
             this.FormBorderStyle = FormBorderStyle.None;
@@ -103,7 +125,7 @@ namespace AwarenessFullScreen
             // Background image
             pictureBox = new PictureBox();
             pictureBox.Dock = DockStyle.Fill;
-            pictureBox.BackColor = Color.Black; // or corporate color
+            pictureBox.BackColor = System.Drawing.Color.Black; // or corporate color
             pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
 
             if (File.Exists(imagePath))
@@ -114,12 +136,12 @@ namespace AwarenessFullScreen
                 }
                 catch
                 {
-                    pictureBox.BackColor = Color.Black;
+                    pictureBox.BackColor = System.Drawing.Color.Black;
                 }
             }
             else
             {
-                pictureBox.BackColor = Color.Black;
+                pictureBox.BackColor = System.Drawing.Color.Black;
             }
 
             this.Controls.Add(pictureBox);
@@ -137,16 +159,16 @@ namespace AwarenessFullScreen
             titleLabel = new Label();
             titleLabel.Parent = pictureBox;
             titleLabel.Text = Program.CountdownTitleText;
-            titleLabel.ForeColor = Color.Red;
-            titleLabel.BackColor = Color.Transparent;
+            titleLabel.ForeColor = System.Drawing.Color.Red;
+            titleLabel.BackColor = System.Drawing.Color.Transparent;
             titleLabel.TextAlign = ContentAlignment.MiddleCenter;
             titleLabel.Font = new Font("Segoe UI", 24f, FontStyle.Bold, GraphicsUnit.Point);
 
             // Countdown label (MM:SS)
             countdownLabel = new Label();
             countdownLabel.Parent = pictureBox;
-            countdownLabel.ForeColor = Color.Red;
-            countdownLabel.BackColor = Color.Transparent;
+            countdownLabel.ForeColor = System.Drawing.Color.Red;
+            countdownLabel.BackColor = System.Drawing.Color.Transparent;
             countdownLabel.TextAlign = ContentAlignment.MiddleCenter;
             countdownLabel.Font = new Font("Segoe UI", 48f, FontStyle.Bold, GraphicsUnit.Point);
 
@@ -159,6 +181,9 @@ namespace AwarenessFullScreen
 
             pictureBox.Controls.Add(titleLabel);
             pictureBox.Controls.Add(countdownLabel);
+
+            // Optional: video playback centered on the screen while the first image is shown
+            SetupAndStartVideoIfAvailable(formWidth, formHeight);
 
             // Block mouse input within the app
             this.MouseDown += BlockMouse;
@@ -173,6 +198,95 @@ namespace AwarenessFullScreen
             timer.Start();
 
             UpdateCountdownLabel();
+        }
+
+        private void SetupAndStartVideoIfAvailable(int formWidth, int formHeight)
+        {
+            if (!File.Exists(Program.VideoPath))
+            {
+                return;
+            }
+
+            try
+            {
+                // Host for WPF MediaElement inside WinForms
+                videoHost = new ElementHost();
+                videoHost.Parent = pictureBox;
+                videoHost.BackColor = System.Drawing.Color.Black;
+                videoHost.Visible = true;
+
+                // Fixed video size: 400 x 300, centered
+                int videoWidth = 400;
+                int videoHeight = 300;
+                int videoLeft = (formWidth - videoWidth) / 2;
+                int videoTop = (formHeight - videoHeight) / 2;
+
+                videoHost.Bounds = new Rectangle(videoLeft, videoTop, videoWidth, videoHeight);
+
+                // WPF MediaElement
+                mediaElement = new WpfMediaElement();
+                mediaElement.LoadedBehavior = WpfMediaState.Manual;
+                mediaElement.UnloadedBehavior = WpfMediaState.Manual;
+                mediaElement.Stretch = Stretch.Uniform;
+                mediaElement.Volume = playVideoAudio ? 1.0 : 0.0; // audio only on primary form
+                mediaElement.Source = new Uri(Program.VideoPath, UriKind.Absolute);
+
+                videoHost.Child = mediaElement;
+
+                pictureBox.Controls.Add(videoHost);
+                videoHost.BringToFront();
+
+                // Start playback
+                mediaElement.Play();
+
+                // Ensure countdown labels stay on top of the video
+                titleLabel.BringToFront();
+                countdownLabel.BringToFront();
+            }
+            catch (Exception ex)
+            {
+                // For troubleshooting, write error to debug output (not visible to end users)
+                Debug.WriteLine("Video initialization error: " + ex);
+
+                if (mediaElement != null)
+                {
+                    mediaElement = null;
+                }
+                if (videoHost != null)
+                {
+                    videoHost.Visible = false;
+                    videoHost.Dispose();
+                    videoHost = null;
+                }
+            }
+        }
+
+        private void StopAndDisposeVideo()
+        {
+            if (mediaElement == null && videoHost == null)
+                return;
+
+            try
+            {
+                if (mediaElement != null)
+                {
+                    mediaElement.Stop();
+                    mediaElement.Close();
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            if (videoHost != null)
+            {
+                videoHost.Visible = false;
+                videoHost.Dispose();
+                videoHost = null;
+            }
+
+            mediaElement = null;
         }
 
         private void Timer_Tick(object sender, EventArgs e)
@@ -197,6 +311,9 @@ namespace AwarenessFullScreen
                             oldImage.Dispose();
                         }
                         secondaryImageSwitched = true;
+
+                        // Stop and hide video as soon as the secondary image is shown
+                        StopAndDisposeVideo();
                     }
                     catch
                     {
@@ -252,6 +369,9 @@ namespace AwarenessFullScreen
                 e.Cancel = true;
                 return;
             }
+
+            // Clean up video resources if still active
+            StopAndDisposeVideo();
 
             base.OnFormClosing(e);
         }
