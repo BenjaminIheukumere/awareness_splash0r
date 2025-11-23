@@ -22,7 +22,7 @@ namespace AwarenessFullScreen
         // --------------------------------------------------------------------
 
         // Countdown duration in seconds (e.g. 180 = 3 minutes)
-        public static int CountdownSeconds = 10;
+        public static int CountdownSeconds = 180;
 
         // Path to the primary background image
         public static string ImagePath = @"C:\awareness\pic1.jpg";
