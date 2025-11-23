@@ -14,7 +14,7 @@ namespace AwarenessFullScreen
     static class Program
     {
         // ---------------------------------------------------------------------------------------------
-        // AwarenessSplash0r v1.4 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
+        // AwarenessSplash0r v1.5 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
         // ---------------------------------------------------------------------------------------------
 
         // --------------------------------------------------------------------
@@ -22,31 +22,35 @@ namespace AwarenessFullScreen
         // --------------------------------------------------------------------
 
         // Countdown duration in seconds (e.g. 180 = 3 minutes)
-        public static int CountdownSeconds = 30;
+        public static int CountdownSeconds = 10;
 
         // Path to the primary background image
         public static string ImagePath = @"C:\awareness\pic1.jpg";
 
         // Path to the optional secondary background image
-        // This image will be shown shortly before the timer ends (see value below)
         public static string SecondaryImagePath = @"C:\awareness\pic2.jpg";
 
-        // Path to an optional video file
-        // For best compatibility use WMV, e.g. C:\awareness\video1.wmv
+        // Path to an optional video file (WMV recommended)
         public static string VideoPath = @"C:\awareness\video1.wmv";
 
         // Number of seconds before the end when the secondary image should be shown
-        public static int SecondaryImageSwitchBeforeEndSeconds = 5;
+        public static int SecondaryImageSwitchBeforeEndSeconds = 30;
 
         // Text displayed above the timer
         public static string CountdownTitleText = "Countdown";
 
         // Position and size of the countdown area in percent of the screen size
-        // 0–100, relative to fullscreen of each display
         public static int CountdownAreaWidthPercent = 100; // width
         public static int CountdownAreaHeightPercent = 15; // height
         public static int CountdownAreaLeftPercent = 0;     // distance from left
         public static int CountdownAreaTopPercent = 80;     // distance from top
+
+        // NEW: Target system master volume (0–100)
+        // This sets the Windows master volume when the app starts.
+        public static int TargetSystemVolumePercent = 75;
+
+        // NEW: Restore previous system volume when the app exits
+        public static bool RestorePreviousVolumeOnExit = true;
 
         // --------------------------------------------------------------------
 
@@ -59,9 +63,20 @@ namespace AwarenessFullScreen
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // Set system master volume (store old value for optional restore)
+            SystemVolume.SetSystemVolumePercent(TargetSystemVolumePercent);
+
             // Block Windows key via a global keyboard hook
             KeyboardBlocker.Install();
-            Application.ApplicationExit += (s, e) => KeyboardBlocker.Uninstall();
+            Application.ApplicationExit += (s, e) =>
+            {
+                KeyboardBlocker.Uninstall();
+
+                if (RestorePreviousVolumeOnExit)
+                {
+                    SystemVolume.RestorePreviousVolume();
+                }
+            };
 
             Screen[] screens = Screen.AllScreens;
 
@@ -116,11 +131,10 @@ namespace AwarenessFullScreen
             this.playVideoAudio = playVideoAudio;
             remainingSeconds = countdownSeconds;
 
-            this.AutoScaleMode = AutoScaleMode.None; // prevent WinForms auto-scaling from shrinking the window
+            this.AutoScaleMode = AutoScaleMode.None;
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.Manual;
 
-            // Force exact fullscreen bounds for this screen (includes taskbar area)
             this.Bounds = screen.Bounds;
             this.Location = screen.Bounds.Location;
             this.Size = screen.Bounds.Size;
@@ -129,24 +143,18 @@ namespace AwarenessFullScreen
             this.KeyPreview = true;
             this.ShowInTaskbar = false;
             this.ControlBox = false;
-            Cursor.Hide(); // hide mouse cursor
+            Cursor.Hide();
 
             // Background image
             pictureBox = new PictureBox();
             pictureBox.Dock = DockStyle.Fill;
-            pictureBox.BackColor = System.Drawing.Color.Black; // or corporate color
+            pictureBox.BackColor = System.Drawing.Color.Black;
             pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
 
             if (File.Exists(imagePath))
             {
-                try
-                {
-                    pictureBox.Image = Image.FromFile(imagePath);
-                }
-                catch
-                {
-                    pictureBox.BackColor = System.Drawing.Color.Black;
-                }
+                try { pictureBox.Image = Image.FromFile(imagePath); }
+                catch { pictureBox.BackColor = System.Drawing.Color.Black; }
             }
             else
             {
@@ -177,10 +185,8 @@ namespace AwarenessFullScreen
             pictureBox.Controls.Add(titleLabel);
             pictureBox.Controls.Add(countdownLabel);
 
-            // Layout countdown area (clamp to screen + auto font sizing)
             LayoutCountdownArea();
 
-            // Optional: video playback centered on the screen while the first image is shown
             SetupAndStartVideoIfAvailable(this.Bounds.Width, this.Bounds.Height);
 
             // Block mouse input within the app
@@ -197,7 +203,6 @@ namespace AwarenessFullScreen
 
             UpdateCountdownLabel();
 
-            // Re-layout if something changes (just in case)
             this.Shown += (s, e) => LayoutCountdownArea();
             this.Resize += (s, e) => LayoutCountdownArea();
         }
@@ -212,31 +217,25 @@ namespace AwarenessFullScreen
             int areaLeft = formWidth * Program.CountdownAreaLeftPercent / 100;
             int areaTop = formHeight * Program.CountdownAreaTopPercent / 100;
 
-            // Clamp area so it NEVER runs outside the screen
             areaWidth = Math.Max(1, Math.Min(areaWidth, formWidth));
             areaHeight = Math.Max(1, Math.Min(areaHeight, formHeight));
-
             areaLeft = Math.Max(0, Math.Min(areaLeft, formWidth - areaWidth));
 
-            int bottomSafetyMargin = 8; // pixels
+            int bottomSafetyMargin = 8;
             areaTop = Math.Max(0, Math.Min(areaTop, formHeight - areaHeight - bottomSafetyMargin));
 
-            // Dynamic font sizes based on area height
-            // Ensure text always fits inside the area
             float titleFontSize = Math.Min(40f, Math.Max(14f, areaHeight * 0.28f));
             float countdownFontSize = Math.Min(110f, Math.Max(22f, areaHeight * 0.20f));
 
             titleLabel.Font = new Font("Segoe UI", titleFontSize, FontStyle.Bold, GraphicsUnit.Point);
             countdownLabel.Font = new Font("Segoe UI", countdownFontSize, FontStyle.Bold, GraphicsUnit.Point);
 
-            // Split area: a bit more space for title to avoid clipping
             int titleHeight = (int)(areaHeight * 0.38f);
             int countdownHeight = areaHeight - titleHeight;
 
             titleLabel.Bounds = new Rectangle(areaLeft, areaTop, areaWidth, titleHeight);
             countdownLabel.Bounds = new Rectangle(areaLeft, areaTop + titleHeight, areaWidth, countdownHeight);
 
-            // Small padding to avoid baseline clipping
             titleLabel.Padding = new Padding(0, 0, 0, 2);
             countdownLabel.Padding = new Padding(0, 2, 0, 0);
 
@@ -247,19 +246,15 @@ namespace AwarenessFullScreen
         private void SetupAndStartVideoIfAvailable(int formWidth, int formHeight)
         {
             if (!File.Exists(Program.VideoPath))
-            {
                 return;
-            }
 
             try
             {
-                // Host for WPF MediaElement inside WinForms
                 videoHost = new ElementHost();
                 videoHost.Parent = pictureBox;
                 videoHost.BackColor = System.Drawing.Color.Black;
                 videoHost.Visible = true;
 
-                // Fixed video size: 400 x 300, centered
                 int videoWidth = 400;
                 int videoHeight = 300;
                 int videoLeft = (formWidth - videoWidth) / 2;
@@ -267,12 +262,13 @@ namespace AwarenessFullScreen
 
                 videoHost.Bounds = new Rectangle(videoLeft, videoTop, videoWidth, videoHeight);
 
-                // WPF MediaElement
                 mediaElement = new WpfMediaElement();
                 mediaElement.LoadedBehavior = WpfMediaState.Manual;
                 mediaElement.UnloadedBehavior = WpfMediaState.Manual;
                 mediaElement.Stretch = Stretch.Uniform;
-                mediaElement.Volume = playVideoAudio ? 1.0 : 0.0; // audio only on primary form
+
+                // Video volume stays at max, but system volume is controlled by SystemVolume class
+                mediaElement.Volume = playVideoAudio ? 1.0 : 0.0;
                 mediaElement.Source = new Uri(Program.VideoPath, UriKind.Absolute);
 
                 videoHost.Child = mediaElement;
@@ -280,10 +276,8 @@ namespace AwarenessFullScreen
                 pictureBox.Controls.Add(videoHost);
                 videoHost.BringToFront();
 
-                // Start playback
                 mediaElement.Play();
 
-                // Ensure countdown labels stay on top of the video
                 titleLabel.BringToFront();
                 countdownLabel.BringToFront();
             }
@@ -291,10 +285,7 @@ namespace AwarenessFullScreen
             {
                 Debug.WriteLine("Video initialization error: " + ex);
 
-                if (mediaElement != null)
-                {
-                    mediaElement = null;
-                }
+                if (mediaElement != null) mediaElement = null;
                 if (videoHost != null)
                 {
                     videoHost.Visible = false;
@@ -311,11 +302,8 @@ namespace AwarenessFullScreen
 
             try
             {
-                if (mediaElement != null)
-                {
-                    mediaElement.Stop();
-                    mediaElement.Close();
-                }
+                mediaElement?.Stop();
+                mediaElement?.Close();
             }
             catch { }
 
@@ -336,7 +324,6 @@ namespace AwarenessFullScreen
                 remainingSeconds--;
                 UpdateCountdownLabel();
 
-                // Switch to secondary image if available and threshold reached
                 if (!secondaryImageSwitched &&
                     remainingSeconds == Program.SecondaryImageSwitchBeforeEndSeconds &&
                     File.Exists(Program.SecondaryImagePath))
@@ -346,13 +333,9 @@ namespace AwarenessFullScreen
                         Image newImage = Image.FromFile(Program.SecondaryImagePath);
                         Image oldImage = pictureBox.Image;
                         pictureBox.Image = newImage;
-                        if (oldImage != null)
-                        {
-                            oldImage.Dispose();
-                        }
-                        secondaryImageSwitched = true;
+                        oldImage?.Dispose();
 
-                        // Stop and hide video as soon as the secondary image is shown
+                        secondaryImageSwitched = true;
                         StopAndDisposeVideo();
                     }
                     catch { }
@@ -375,24 +358,17 @@ namespace AwarenessFullScreen
 
         private void CountdownForm_KeyDown(object sender, KeyEventArgs e)
         {
-            // Block ALT+F4
             if (e.Alt && e.KeyCode == Keys.F4)
-            {
                 e.Handled = true;
-            }
         }
 
-        private void BlockMouse(object sender, MouseEventArgs e)
-        {
-            // Ignore mouse events
-        }
+        private void BlockMouse(object sender, MouseEventArgs e) { }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (keyData == (Keys.Alt | Keys.F4))
-            {
                 return true;
-            }
+
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -410,6 +386,142 @@ namespace AwarenessFullScreen
     }
 
     // ------------------------------------------------------------------------
+    // System volume control via Windows Core Audio API (no extra dependencies)
+    // ------------------------------------------------------------------------
+    public static class SystemVolume
+    {
+        private static IAudioEndpointVolume _endpoint;
+        private static float? _previousScalar;
+
+        public static void SetSystemVolumePercent(int percent)
+        {
+            try
+            {
+                percent = Math.Max(0, Math.Min(100, percent));
+                float scalar = percent / 100f;
+
+                var ep = GetEndpoint();
+                if (ep == null) return;
+
+                if (_previousScalar == null)
+                {
+                    ep.GetMasterVolumeLevelScalar(out float current);
+                    _previousScalar = current;
+                }
+
+                ep.SetMasterVolumeLevelScalar(scalar, Guid.Empty);
+            }
+            catch
+            {
+                // If volume control fails (no device, policy, etc.), app continues silently
+            }
+        }
+
+        public static void RestorePreviousVolume()
+        {
+            try
+            {
+                if (_previousScalar == null) return;
+
+                var ep = GetEndpoint();
+                if (ep == null) return;
+
+                ep.SetMasterVolumeLevelScalar(_previousScalar.Value, Guid.Empty);
+            }
+            catch { }
+        }
+
+        private static IAudioEndpointVolume GetEndpoint()
+        {
+            if (_endpoint != null) return _endpoint;
+
+            try
+            {
+                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
+                enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out IMMDevice device);
+
+                Guid iid = typeof(IAudioEndpointVolume).GUID;
+                device.Activate(ref iid, CLSCTX.ALL, IntPtr.Zero, out object obj);
+
+                _endpoint = (IAudioEndpointVolume)obj;
+                return _endpoint;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static class CLSCTX
+        {
+            public const int ALL = 23;
+        }
+
+        private enum EDataFlow
+        {
+            eRender = 0,
+            eCapture = 1,
+            eAll = 2
+        }
+
+        private enum ERole
+        {
+            eConsole = 0,
+            eMultimedia = 1,
+            eCommunications = 2
+        }
+
+        [ComImport]
+        [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+        private class MMDeviceEnumeratorComObject
+        {
+        }
+
+        [ComImport]
+        [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IMMDeviceEnumerator
+        {
+            int NotImpl1();
+            int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppDevice);
+            // rest not needed
+        }
+
+        [ComImport]
+        [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IMMDevice
+        {
+            int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+        }
+
+        [ComImport]
+        [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IAudioEndpointVolume
+        {
+            int RegisterControlChangeNotify(IntPtr pNotify);
+            int UnregisterControlChangeNotify(IntPtr pNotify);
+            int GetChannelCount(out uint pnChannelCount);
+            int SetMasterVolumeLevel(float fLevelDB, Guid pguidEventContext);
+            int SetMasterVolumeLevelScalar(float fLevel, Guid pguidEventContext);
+            int GetMasterVolumeLevel(out float pfLevelDB);
+            int GetMasterVolumeLevelScalar(out float pfLevel);
+            int SetChannelVolumeLevel(uint nChannel, float fLevelDB, Guid pguidEventContext);
+            int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, Guid pguidEventContext);
+            int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
+            int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
+            int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, Guid pguidEventContext);
+            int GetMute(out bool pbMute);
+            int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
+            int VolumeStepUp(Guid pguidEventContext);
+            int VolumeStepDown(Guid pguidEventContext);
+            int QueryHardwareSupport(out uint pdwHardwareSupportMask);
+            int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
+        }
+    }
+
+    // ------------------------------------------------------------------------
     // DPI helper: make the process DPI-aware for correct fullscreen sizing
     // ------------------------------------------------------------------------
     public static class DpiHelper
@@ -418,16 +530,10 @@ namespace AwarenessFullScreen
 
         public static void SetDpiAwareness()
         {
-            try
-            {
-                SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
-            }
+            try { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE); }
             catch
             {
-                try
-                {
-                    SetProcessDPIAware();
-                }
+                try { SetProcessDPIAware(); }
                 catch { }
             }
         }
@@ -456,8 +562,7 @@ namespace AwarenessFullScreen
 
         public static void Install()
         {
-            if (_hookId != IntPtr.Zero)
-                return;
+            if (_hookId != IntPtr.Zero) return;
 
             using (Process curProcess = Process.GetCurrentProcess())
             using (ProcessModule curModule = curProcess.MainModule)
@@ -486,9 +591,7 @@ namespace AwarenessFullScreen
                 int vkCode = Marshal.ReadInt32(lParam);
 
                 if (vkCode == VK_LWIN || vkCode == VK_RWIN)
-                {
                     return (IntPtr)1;
-                }
             }
 
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
