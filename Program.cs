@@ -22,7 +22,7 @@ namespace AwarenessFullScreen
         // --------------------------------------------------------------------
 
         // Countdown duration in seconds (e.g. 180 = 3 minutes)
-        public static int CountdownSeconds = 45;
+        public static int CountdownSeconds = 30;
 
         // Path to the primary background image
         public static string ImagePath = @"C:\awareness\pic1.jpg";
@@ -44,15 +44,18 @@ namespace AwarenessFullScreen
         // Position and size of the countdown area in percent of the screen size
         // 0–100, relative to fullscreen of each display
         public static int CountdownAreaWidthPercent = 100; // width
-        public static int CountdownAreaHeightPercent = 10; // height
+        public static int CountdownAreaHeightPercent = 15; // height
         public static int CountdownAreaLeftPercent = 0;     // distance from left
-        public static int CountdownAreaTopPercent = 85;     // distance from top
+        public static int CountdownAreaTopPercent = 80;     // distance from top
 
         // --------------------------------------------------------------------
 
         [STAThread]
         static void Main()
         {
+            // Make the process DPI-aware so fullscreen works reliably on high-DPI laptop panels
+            DpiHelper.SetDpiAwareness();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -113,9 +116,15 @@ namespace AwarenessFullScreen
             this.playVideoAudio = playVideoAudio;
             remainingSeconds = countdownSeconds;
 
+            this.AutoScaleMode = AutoScaleMode.None; // prevent WinForms auto-scaling from shrinking the window
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.Manual;
+
+            // Force exact fullscreen bounds for this screen (includes taskbar area)
             this.Bounds = screen.Bounds;
+            this.Location = screen.Bounds.Location;
+            this.Size = screen.Bounds.Size;
+
             this.TopMost = true;
             this.KeyPreview = true;
             this.ShowInTaskbar = false;
@@ -146,15 +155,6 @@ namespace AwarenessFullScreen
 
             this.Controls.Add(pictureBox);
 
-            // Calculate countdown area (in pixels based on percentage values)
-            int formWidth = this.Bounds.Width;
-            int formHeight = this.Bounds.Height;
-
-            int areaWidth = formWidth * Program.CountdownAreaWidthPercent / 100;
-            int areaHeight = formHeight * Program.CountdownAreaHeightPercent / 100;
-            int areaLeft = formWidth * Program.CountdownAreaLeftPercent / 100;
-            int areaTop = formHeight * Program.CountdownAreaTopPercent / 100;
-
             // Title label ("Countdown")
             titleLabel = new Label();
             titleLabel.Parent = pictureBox;
@@ -162,7 +162,8 @@ namespace AwarenessFullScreen
             titleLabel.ForeColor = System.Drawing.Color.Red;
             titleLabel.BackColor = System.Drawing.Color.Transparent;
             titleLabel.TextAlign = ContentAlignment.MiddleCenter;
-            titleLabel.Font = new Font("Segoe UI", 24f, FontStyle.Bold, GraphicsUnit.Point);
+            titleLabel.AutoSize = false;
+            titleLabel.UseCompatibleTextRendering = true;
 
             // Countdown label (MM:SS)
             countdownLabel = new Label();
@@ -170,20 +171,17 @@ namespace AwarenessFullScreen
             countdownLabel.ForeColor = System.Drawing.Color.Red;
             countdownLabel.BackColor = System.Drawing.Color.Transparent;
             countdownLabel.TextAlign = ContentAlignment.MiddleCenter;
-            countdownLabel.Font = new Font("Segoe UI", 48f, FontStyle.Bold, GraphicsUnit.Point);
-
-            // Title at the top of the area, countdown below
-            int titleHeight = areaHeight / 3;
-            int countdownHeight = areaHeight - titleHeight;
-
-            titleLabel.Bounds = new Rectangle(areaLeft, areaTop, areaWidth, titleHeight);
-            countdownLabel.Bounds = new Rectangle(areaLeft, areaTop + titleHeight, areaWidth, countdownHeight);
+            countdownLabel.AutoSize = false;
+            countdownLabel.UseCompatibleTextRendering = true;
 
             pictureBox.Controls.Add(titleLabel);
             pictureBox.Controls.Add(countdownLabel);
 
+            // Layout countdown area (clamp to screen + auto font sizing)
+            LayoutCountdownArea();
+
             // Optional: video playback centered on the screen while the first image is shown
-            SetupAndStartVideoIfAvailable(formWidth, formHeight);
+            SetupAndStartVideoIfAvailable(this.Bounds.Width, this.Bounds.Height);
 
             // Block mouse input within the app
             this.MouseDown += BlockMouse;
@@ -198,6 +196,52 @@ namespace AwarenessFullScreen
             timer.Start();
 
             UpdateCountdownLabel();
+
+            // Re-layout if something changes (just in case)
+            this.Shown += (s, e) => LayoutCountdownArea();
+            this.Resize += (s, e) => LayoutCountdownArea();
+        }
+
+        private void LayoutCountdownArea()
+        {
+            int formWidth = this.Bounds.Width;
+            int formHeight = this.Bounds.Height;
+
+            int areaWidth = formWidth * Program.CountdownAreaWidthPercent / 100;
+            int areaHeight = formHeight * Program.CountdownAreaHeightPercent / 100;
+            int areaLeft = formWidth * Program.CountdownAreaLeftPercent / 100;
+            int areaTop = formHeight * Program.CountdownAreaTopPercent / 100;
+
+            // Clamp area so it NEVER runs outside the screen
+            areaWidth = Math.Max(1, Math.Min(areaWidth, formWidth));
+            areaHeight = Math.Max(1, Math.Min(areaHeight, formHeight));
+
+            areaLeft = Math.Max(0, Math.Min(areaLeft, formWidth - areaWidth));
+
+            int bottomSafetyMargin = 8; // pixels
+            areaTop = Math.Max(0, Math.Min(areaTop, formHeight - areaHeight - bottomSafetyMargin));
+
+            // Dynamic font sizes based on area height
+            // Ensure text always fits inside the area
+            float titleFontSize = Math.Min(40f, Math.Max(14f, areaHeight * 0.28f));
+            float countdownFontSize = Math.Min(110f, Math.Max(22f, areaHeight * 0.20f));
+
+            titleLabel.Font = new Font("Segoe UI", titleFontSize, FontStyle.Bold, GraphicsUnit.Point);
+            countdownLabel.Font = new Font("Segoe UI", countdownFontSize, FontStyle.Bold, GraphicsUnit.Point);
+
+            // Split area: a bit more space for title to avoid clipping
+            int titleHeight = (int)(areaHeight * 0.38f);
+            int countdownHeight = areaHeight - titleHeight;
+
+            titleLabel.Bounds = new Rectangle(areaLeft, areaTop, areaWidth, titleHeight);
+            countdownLabel.Bounds = new Rectangle(areaLeft, areaTop + titleHeight, areaWidth, countdownHeight);
+
+            // Small padding to avoid baseline clipping
+            titleLabel.Padding = new Padding(0, 0, 0, 2);
+            countdownLabel.Padding = new Padding(0, 2, 0, 0);
+
+            titleLabel.BringToFront();
+            countdownLabel.BringToFront();
         }
 
         private void SetupAndStartVideoIfAvailable(int formWidth, int formHeight)
@@ -245,7 +289,6 @@ namespace AwarenessFullScreen
             }
             catch (Exception ex)
             {
-                // For troubleshooting, write error to debug output (not visible to end users)
                 Debug.WriteLine("Video initialization error: " + ex);
 
                 if (mediaElement != null)
@@ -274,10 +317,7 @@ namespace AwarenessFullScreen
                     mediaElement.Close();
                 }
             }
-            catch
-            {
-                // ignore
-            }
+            catch { }
 
             if (videoHost != null)
             {
@@ -315,10 +355,7 @@ namespace AwarenessFullScreen
                         // Stop and hide video as soon as the secondary image is shown
                         StopAndDisposeVideo();
                     }
-                    catch
-                    {
-                        // Ignore any errors while loading the secondary image
-                    }
+                    catch { }
                 }
             }
 
@@ -352,29 +389,54 @@ namespace AwarenessFullScreen
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            // Additional protection against Alt+F4
             if (keyData == (Keys.Alt | Keys.F4))
             {
-                return true; // handled
+                return true;
             }
-
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // Prevent closing while countdown is still running
             if (!allowClose)
             {
                 e.Cancel = true;
                 return;
             }
 
-            // Clean up video resources if still active
             StopAndDisposeVideo();
-
             base.OnFormClosing(e);
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // DPI helper: make the process DPI-aware for correct fullscreen sizing
+    // ------------------------------------------------------------------------
+    public static class DpiHelper
+    {
+        private const int PROCESS_PER_MONITOR_DPI_AWARE = 2;
+
+        public static void SetDpiAwareness()
+        {
+            try
+            {
+                SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+            }
+            catch
+            {
+                try
+                {
+                    SetProcessDPIAware();
+                }
+                catch { }
+            }
+        }
+
+        [DllImport("Shcore.dll")]
+        private static extern int SetProcessDpiAwareness(int value);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
     }
 
     // ------------------------------------------------------------------------
@@ -423,10 +485,8 @@ namespace AwarenessFullScreen
             {
                 int vkCode = Marshal.ReadInt32(lParam);
 
-                // Block Windows keys
                 if (vkCode == VK_LWIN || vkCode == VK_RWIN)
                 {
-                    // Do not pass the key event further → Windows key is swallowed
                     return (IntPtr)1;
                 }
             }
