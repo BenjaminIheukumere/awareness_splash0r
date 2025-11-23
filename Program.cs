@@ -14,7 +14,7 @@ namespace AwarenessFullScreen
     static class Program
     {
         // ---------------------------------------------------------------------------------------------
-        // AwarenessSplash0r v1.2 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
+        // AwarenessSplash0r v1.4 by Benjamin Iheukumere | SafeLink IT | b.iheukumere@safelink-it.com //
         // ---------------------------------------------------------------------------------------------
 
         // --------------------------------------------------------------------
